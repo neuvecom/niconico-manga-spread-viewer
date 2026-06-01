@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "ニコニコ漫画 見開きビューア",
+  "version": "1.0.0",
+  "description": "ニコニコ漫画の縦スクロール表示を、見開き(2ページ)レイアウトに変換して読みやすくします。",
+  "content_scripts": [
+    {
+      "matches": ["https://manga.nicovideo.jp/watch/*"],
+      "js": ["content.js"],
+      "css": ["viewer.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
