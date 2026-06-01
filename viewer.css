@@ -74,7 +74,10 @@
   box-sizing: border-box;
 }
 .nmv-page {
-  max-height: 100%;
+  /* ウィンドウいっぱいに拡大する（原寸より大きくも引き伸ばす）。
+     高さを基準に拡大し、横がはみ出す場合は max-width で抑える。 */
+  height: 100%;
+  width: auto;
   max-width: 50%;
   object-fit: contain;
   display: block;
