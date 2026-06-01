@@ -23,9 +23,6 @@
     spread: true,   // true=見開き / false=単ページ
   };
 
-  // デバッグ用: 取得結果をコンソールから確認できるよう state を公開
-  window.__nmv = state;
-
   // ---------------------------------------------------------------------------
   // ページ取得（キャプチャ）
   // ---------------------------------------------------------------------------
@@ -479,18 +476,6 @@
       state.pages = pages;
       state.dims = dims;
       rebuildSpreads(0);
-      // デバッグ: 各ページの取得結果(dataURL長と寸法)を DOM 属性に書き出す。
-      // isolated world のため window 経由では見えないので、DOM 共有を使う。
-      try {
-        const dbg = pages.map((p, i) => ({
-          i: i + 1,
-          len: p ? p.length : 0,
-          w: dims[i] ? dims[i].w : 0,
-          h: dims[i] ? dims[i].h : 0,
-        }));
-        document.documentElement.setAttribute('data-nmv-debug', JSON.stringify(dbg));
-        console.log('[見開きビューア] 取得結果', dbg);
-      } catch (e) {}
     } catch (e) {
       console.error('[見開きビューア] 取得エラー', e);
       alert('ページ取得中にエラーが発生しました。コンソールを確認してください。');
