@@ -69,20 +69,48 @@
     }
   }
 
-  async function captureAllPages(onProgress) {
-    const notes = $$('#page_contents .note');
-    const total = notes.length;
+  // niconico はページ(.note)を遅延読み込みするため、まず最下部まで段階的に
+  // スクロールして全 .note を DOM に出現させる。件数が増えなくなったら完了。
+  async function loadAllNotes(onCount) {
+    const scroller = $('#page_contents');
+    const viewport = () => (scroller ? scroller.clientHeight : window.innerHeight);
+    const maxScroll = () => (scroller ? scroller.scrollHeight : document.documentElement.scrollHeight);
+    const setScroll = (y) => { if (scroller) scroller.scrollTop = y; else window.scrollTo(0, y); };
+
+    let pos = 0;
+    let lastCount = -1;
+    let stable = 0;
+    for (let i = 0; i < 600; i++) {
+      pos += viewport() * 0.9;
+      setScroll(pos);
+      await sleep(160);
+      const count = $$('#page_contents .note').length;
+      if (onCount) onCount(count);
+      if (count === lastCount) stable++;
+      else { stable = 0; lastCount = count; }
+      // 最下部に到達し、かつ件数が数回連続で変わらなければ全ページ読み込み完了
+      const atBottom = pos >= maxScroll() - viewport() - 4;
+      if (atBottom && stable >= 4) break;
+    }
+    return $$('#page_contents .note');
+  }
+
+  async function captureAllPages(onLoad, onProgress) {
     const scroller = $('#page_contents');
     const prevScroll = scroller ? scroller.scrollTop : window.scrollY;
-    const pages = new Array(notes.length).fill(null);
-    const dims = new Array(notes.length).fill(null);
+
+    // まず全ページを DOM に読み込ませてから取得対象を確定する
+    const notes = await loadAllNotes(onLoad);
+    const total = notes.length;
+    const pages = new Array(total).fill(null);
+    const dims = new Array(total).fill(null);
 
     const store = (i, cap) => {
       if (cap) { pages[i] = cap.url; dims[i] = { w: cap.w, h: cap.h }; }
     };
 
     // 1巡目
-    for (let i = 0; i < notes.length; i++) {
+    for (let i = 0; i < total; i++) {
       store(i, await captureNote(notes[i], 6000));
       onProgress(i + 1, total);
     }
@@ -339,7 +367,7 @@
       p.className = 'nmv-progress';
       p.innerHTML = `
         <div class="nmv-progress-box">
-          <div class="nmv-progress-title">ページを取得中…</div>
+          <div class="nmv-progress-title" id="nmv-progress-title">ページを取得中…</div>
           <div class="nmv-progress-track"><div class="nmv-progress-fill" id="nmv-progress-fill"></div></div>
           <div class="nmv-progress-text" id="nmv-progress-text">0 / 0</div>
         </div>`;
@@ -349,7 +377,22 @@
     return p;
   }
 
+  function setProgressTitle(t) {
+    const el = $('#nmv-progress-title');
+    if (el) el.textContent = t;
+  }
+
+  // 全ページ読み込み中（総数が未確定なので件数だけ表示）
+  function updateLoading(count) {
+    setProgressTitle('全ページを読み込み中…');
+    const fill = $('#nmv-progress-fill');
+    const text = $('#nmv-progress-text');
+    if (fill) fill.style.width = '0%';
+    if (text) text.textContent = `${count} ページ`;
+  }
+
   function updateProgress(done, total) {
+    setProgressTitle('ページを取得中…');
     const fill = $('#nmv-progress-fill');
     const text = $('#nmv-progress-text');
     if (fill) fill.style.width = `${Math.round((done / total) * 100)}%`;
@@ -376,7 +419,7 @@
     capturing = true;
     showProgress();
     try {
-      const { pages, dims } = await captureAllPages(updateProgress);
+      const { pages, dims } = await captureAllPages(updateLoading, updateProgress);
       state.pages = pages;
       state.dims = dims;
       rebuildSpreads(0);
