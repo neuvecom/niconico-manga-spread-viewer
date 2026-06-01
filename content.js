@@ -47,14 +47,21 @@
     }
   }
 
-  // setTimeout ベースでポーリング（rAF はタブが非表示だと停止するため使わない）
-  function waitForNoteCanvas(note, timeout = 6000, interval = 80) {
+  // note 内の「本体canvas」を取得（コメント用の .balloon canvas は除外）。
+  // 見開きページは note(幅1300px) の中に本体canvasが2枚（左半分・右半分）入っている。
+  function mainCanvases(note) {
+    return [...note.querySelectorAll('canvas:not(.balloon)')];
+  }
+
+  // setTimeout ベースでポーリング（rAF はタブが非表示だと停止するため使わない）。
+  // 本体canvasが揃い、全てに内容が描かれるまで待つ。
+  function waitForNoteCanvases(note, timeout = 6000, interval = 80) {
     return new Promise((resolve) => {
       const start = performance.now();
       (function poll() {
-        const c = note.querySelector('canvas');
-        if (c && canvasHasContent(c)) return resolve(c);
-        if (performance.now() - start > timeout) return resolve(c && c.width ? c : null);
+        const cs = mainCanvases(note);
+        if (cs.length && cs.every((c) => c.width && canvasHasContent(c))) return resolve(cs);
+        if (performance.now() - start > timeout) return resolve(cs.length ? cs : null);
         setTimeout(poll, interval);
       })();
     });
@@ -78,23 +85,41 @@
   async function captureNote(note, timeout) {
     note.scrollIntoView({ block: 'center' });
     await sleep(70); // 遅延レンダラに描画機会を与える
-    const canvas = await waitForNoteCanvas(note, timeout);
-    if (!canvas) return null;
+    const canvases = await waitForNoteCanvases(note, timeout);
+    if (!canvases || !canvases.length) return null;
 
-    // 描画は段階的に進む（左半分→右半分など）ため、最初の内容で撮ると
-    // 一部が白いまま取れてしまう。見た目が変化しなくなる（連続2回の指紋が
-    // 一致する）まで待ってから撮る。
-    let prev = canvasSignature(canvas);
+    // 描画は段階的に進む（左半分→右半分など）ため、見た目が変化しなくなる
+    // （連続2回の指紋が一致する）まで待ってから撮る。
+    let prev = canvases.map(canvasSignature).join('|');
     const settleStart = performance.now();
     while (performance.now() - settleStart < 2500) {
       await sleep(150);
-      const cur = canvasSignature(canvas);
+      const cur = canvases.map(canvasSignature).join('|');
       if (cur === prev) break; // 変化が止まった = 描画完了
       prev = cur;
     }
 
+    // ピクセル位置（左→右）順に並べる
+    const ordered = canvases.slice().sort((a, b) => (a.offsetLeft || 0) - (b.offsetLeft || 0));
+
     try {
-      return { url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height };
+      if (ordered.length === 1) {
+        const c = ordered[0];
+        return { url: c.toDataURL('image/jpeg', 0.92), w: c.width, h: c.height };
+      }
+      // 見開き: note 内の複数canvasを横に連結し、1枚の広い画像にする
+      const totalW = ordered.reduce((s, c) => s + c.width, 0);
+      const maxH = Math.max(...ordered.map((c) => c.height));
+      const out = document.createElement('canvas');
+      out.width = totalW;
+      out.height = maxH;
+      const ctx = out.getContext('2d');
+      let x = 0;
+      for (const c of ordered) {
+        ctx.drawImage(c, x, 0);
+        x += c.width;
+      }
+      return { url: out.toDataURL('image/jpeg', 0.92), w: out.width, h: out.height };
     } catch (e) {
       return null;
     }
