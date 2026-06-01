@@ -86,6 +86,23 @@
   width: 0;
   background: transparent;
 }
+/* 取得に失敗したページのプレースホルダ */
+.nmv-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38%;
+  height: 80%;
+  padding: 16px;
+  box-sizing: border-box;
+  color: #888;
+  background: #1c1c1c;
+  border: 1px dashed #555;
+  border-radius: 8px;
+  font-family: sans-serif;
+  font-size: 14px;
+  text-align: center;
+}
 
 /* 右上の目立つ「閉じる」ボタン */
 .nmv-topclose {

@@ -24,15 +24,6 @@
   // ページ取得（キャプチャ）
   // ---------------------------------------------------------------------------
 
-  function getTotalPages() {
-    const el = $('.manga_page');
-    if (el) {
-      const m = el.textContent.match(/\/\s*(\d+)/);
-      if (m) return parseInt(m[1], 10);
-    }
-    return $$('#page_contents .note').length;
-  }
-
   // canvas に実際に描画済みか（生成直後は全ピクセル alpha=0）
   function canvasHasContent(c) {
     if (!c || !c.width || !c.height) return false;
@@ -244,8 +235,12 @@
 
   function syncButtons() {
     if (!overlay) return;
-    $('#nmv-spread', overlay).textContent = state.spread ? '見開き' : '単ページ';
-    $('#nmv-rtl', overlay).textContent = state.rtl ? '右綴じ' : '左綴じ';
+    const spreadBtn = $('#nmv-spread', overlay);
+    const rtlBtn = $('#nmv-rtl', overlay);
+    spreadBtn.textContent = state.spread ? '見開き' : '単ページ';
+    rtlBtn.textContent = state.rtl ? '右綴じ' : '左綴じ';
+    spreadBtn.classList.toggle('nmv-on', state.spread);
+    rtlBtn.classList.toggle('nmv-on', state.rtl);
     const shiftBtn = $('#nmv-shift', overlay);
     const resetBtn = $('#nmv-shift-reset', overlay);
     shiftBtn.style.display = state.spread ? '' : 'none';
@@ -283,10 +278,16 @@
         const blank = document.createElement('div');
         blank.className = 'nmv-page nmv-blank';
         stage.appendChild(blank);
+      } else if (!state.pages[pi]) {
+        // 取得に失敗したページはプレースホルダを表示（壊れた画像アイコンを避ける）
+        const ph = document.createElement('div');
+        ph.className = 'nmv-page nmv-missing';
+        ph.textContent = `ページ ${pi + 1} を取得できませんでした`;
+        stage.appendChild(ph);
       } else {
         const img = document.createElement('img');
         img.className = 'nmv-page';
-        img.src = state.pages[pi] || '';
+        img.src = state.pages[pi];
         img.alt = `page ${pi + 1}`;
         stage.appendChild(img);
       }
@@ -336,7 +337,10 @@
     if (p) p.style.display = 'none';
   }
 
+  let capturing = false;
+
   async function launch() {
+    if (capturing) return; // 取得中の二重起動を防ぐ
     if (state.pages.length > 0) {
       open();
       return;
@@ -345,6 +349,7 @@
       alert('漫画ページが見つかりません。ログイン済みの作品ページで実行してください。');
       return;
     }
+    capturing = true;
     showProgress();
     try {
       const pages = await captureAllPages(updateProgress);
@@ -355,6 +360,8 @@
       alert('ページ取得中にエラーが発生しました。コンソールを確認してください。');
       hideProgress();
       return;
+    } finally {
+      capturing = false;
     }
     hideProgress();
     const ok = state.pages.filter(Boolean).length;
