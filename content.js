@@ -11,8 +11,11 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+  const WIDE_RATIO = 1.15; // 横/縦がこれを超えるページは「見開き1枚絵」とみなし単独全幅表示
+
   const state = {
     pages: [],      // 取得済みページ画像 (dataURL)
+    dims: [],       // 各ページの寸法 {w,h}（縦横比で見開き1枚絵を判定）
     spreads: [],    // 見開き割り。各要素は [a,b] / [a] で、要素値は ページ番号 or null(空白)
     index: 0,       // 現在の見開きインデックス
     rtl: true,      // 右綴じ(右→左)。日本の漫画は基本これ
@@ -60,7 +63,7 @@
     const canvas = await waitForNoteCanvas(note, timeout);
     if (!canvas) return null;
     try {
-      return canvas.toDataURL('image/jpeg', 0.92);
+      return { url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height };
     } catch (e) {
       return null;
     }
@@ -72,10 +75,15 @@
     const scroller = $('#page_contents');
     const prevScroll = scroller ? scroller.scrollTop : window.scrollY;
     const pages = new Array(notes.length).fill(null);
+    const dims = new Array(notes.length).fill(null);
+
+    const store = (i, cap) => {
+      if (cap) { pages[i] = cap.url; dims[i] = { w: cap.w, h: cap.h }; }
+    };
 
     // 1巡目
     for (let i = 0; i < notes.length; i++) {
-      pages[i] = await captureNote(notes[i], 6000);
+      store(i, await captureNote(notes[i], 6000));
       onProgress(i + 1, total);
     }
 
@@ -84,13 +92,13 @@
       const missing = pages.map((p, i) => (p ? null : i)).filter((i) => i !== null);
       if (missing.length === 0) break;
       for (const i of missing) {
-        pages[i] = await captureNote(notes[i], 9000);
+        store(i, await captureNote(notes[i], 9000));
       }
     }
 
     if (scroller) scroller.scrollTop = prevScroll;
     else window.scrollTo(0, prevScroll);
-    return pages;
+    return { pages, dims };
   }
 
   // ---------------------------------------------------------------------------
@@ -108,6 +116,12 @@
     return seq;
   }
 
+  // 横長ページ = サイトが見開きを1枚絵として配信しているもの。単独・全幅で表示する。
+  function isWide(i) {
+    const d = state.dims[i];
+    return !!(d && d.h > 0 && d.w / d.h > WIDE_RATIO);
+  }
+
   function rebuildSpreads(keepPage) {
     const n = state.pages.length;
     const spreads = [];
@@ -115,7 +129,17 @@
       for (let i = 0; i < n; i++) spreads.push([i]); // 単ページ時は空白を無視
     } else {
       const seq = buildSeq();
-      for (let i = 0; i < seq.length; i += 2) spreads.push(seq.slice(i, i + 2));
+      let cur = [];
+      for (const p of seq) {
+        if (p != null && isWide(p)) {
+          if (cur.length) { spreads.push(cur); cur = []; } // 作りかけのペアを確定
+          spreads.push([p]); // 見開き1枚絵は単独
+          continue;
+        }
+        cur.push(p);
+        if (cur.length === 2) { spreads.push(cur); cur = []; }
+      }
+      if (cur.length) spreads.push(cur);
     }
     state.spreads = spreads;
     if (keepPage != null) {
@@ -352,8 +376,9 @@
     capturing = true;
     showProgress();
     try {
-      const pages = await captureAllPages(updateProgress);
+      const { pages, dims } = await captureAllPages(updateProgress);
       state.pages = pages;
+      state.dims = dims;
       rebuildSpreads(0);
     } catch (e) {
       console.error('[見開きビューア] 取得エラー', e);
