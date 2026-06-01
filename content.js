@@ -60,11 +60,39 @@
     });
   }
 
+  // canvas 全体を 48x48 に縮小したピクセル列を「指紋」として返す。
+  // 描画が進むと指紋が変化するので、安定（描画完了）の判定に使う。
+  function canvasSignature(c) {
+    const t = document.createElement('canvas');
+    t.width = 48;
+    t.height = 48;
+    const tx = t.getContext('2d');
+    try {
+      tx.drawImage(c, 0, 0, 48, 48);
+      return tx.getImageData(0, 0, 48, 48).data.join(',');
+    } catch (e) {
+      return 'tainted';
+    }
+  }
+
   async function captureNote(note, timeout) {
     note.scrollIntoView({ block: 'center' });
     await sleep(70); // 遅延レンダラに描画機会を与える
     const canvas = await waitForNoteCanvas(note, timeout);
     if (!canvas) return null;
+
+    // 描画は段階的に進む（左半分→右半分など）ため、最初の内容で撮ると
+    // 一部が白いまま取れてしまう。見た目が変化しなくなる（連続2回の指紋が
+    // 一致する）まで待ってから撮る。
+    let prev = canvasSignature(canvas);
+    const settleStart = performance.now();
+    while (performance.now() - settleStart < 2500) {
+      await sleep(150);
+      const cur = canvasSignature(canvas);
+      if (cur === prev) break; // 変化が止まった = 描画完了
+      prev = cur;
+    }
+
     try {
       return { url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height };
     } catch (e) {
